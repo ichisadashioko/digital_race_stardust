@@ -1,7 +1,12 @@
 ## To do list
-- [ ] manual node (code)
-- [ ] traffic-sign
-    - implement with current buggy lane detect (lane_detect_01.py)
-- [ ] PID controller
-    - find optimal P,I,D values
-- [ ] multiple windows detect lane (code)
+- Car controller
+    - [ ] Manual controller (code)
+    - [ ] ~~PID controller~~
+        - ~~find optimal P,I,D values~~
+- Lane detection
+    - [ ] Multiple lines lane detect (code)
+    - [ ] Detect lane from shadow
+- Traffic sign detection
+    - [ ] SSD traffic sign detector
+        - implement with current buggy lane detect (lane_detect_01.py)
+    - [ ] Using OpenCV

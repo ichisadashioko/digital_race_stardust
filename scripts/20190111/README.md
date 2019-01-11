@@ -1,0 +1,2 @@
+- `xxx_sobel_lane_detect.py` currently performs better than other nodes but fails at *shadow lane*.
+- `xxx_shadow_lane_detect.py` is supposely able to detect lane from shadow but fails to detect lane at *"bright"* environments.
