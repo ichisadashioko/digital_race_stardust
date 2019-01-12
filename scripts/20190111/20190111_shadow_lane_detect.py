@@ -254,7 +254,7 @@ class Lane_Detect:
         print('steer_delta:', steer_delta)
         self.steer_angle.publish(steer_delta)
         self.speed_pub.publish(35)
-        cv2.waitKey(0)
+        cv2.waitKey(1)
 
     def callback(self, ros_data):
 
