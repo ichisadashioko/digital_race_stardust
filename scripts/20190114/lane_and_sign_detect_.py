@@ -29,6 +29,10 @@ class Lane_Detect:
         self.angle_fix = 0
         self.wait = 0
 
+        # self.subscriber = rospy.Subscriber('/unity_image/compressed', CompressedImage, self.callback, queue_size=1)
+        # self.steer_angle = rospy.Publisher('steerAngle', Float32, queue_size=1)
+        # self.speed_pub = rospy.Publisher('speed', Float32, queue_size=1)
+
         self.subscriber = rospy.Subscriber("/{}_image/compressed".format(self.CODE), CompressedImage, self.callback, queue_size=1)
         self.steer_angle = rospy.Publisher('{}_steerAngle'.format(self.CODE), Float32, queue_size=1)
         self.speed_pub = rospy.Publisher('{}_speed'.format(self.CODE), Float32, queue_size=1)
@@ -54,8 +58,23 @@ class Lane_Detect:
 
         return dst
 
+    def region_of_interest(self, image):
+        height, width = image.shape[:2]
+        SKYLINE = int(height * 0.45)
+        vertices = np.array(
+            [[(width/2, SKYLINE), (width/2, 0), (width, 0), (width, SKYLINE)]], np.int32)
+        mask = np.zeros_like(image)
+        if len(image.shape) > 2:
+            channel_count = image.shape[2]
+            ignore_mask_color = (255,) * channel_count
+        else:
+            ignore_mask_color = 255
+        cv2.fillPoly(mask, vertices, ignore_mask_color)
+        masked_image = cv2.bitwise_and(image, mask)
+        return masked_image
+
     def sign_detect(self, img):
-        detect = 0
+        img = self.region_of_interest(img)
         img_HSV = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         thresh = cv2.inRange(img_HSV, (100, 100, 0), (110, 255, 255))
         im2, contours, hierarchy = cv2.findContours(thresh,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
@@ -74,30 +93,34 @@ class Lane_Detect:
                     cv2.rectangle(drawing, (x,y),(x+w,y+h),(0, 0, 255),2)
                     crop = thresh[y:y+h, x:x+w]
                     self.cal_sign(crop)
-        if self.angle_fix > 0 or self.angle_fix < 0:
+        if self.angle_fix != 0:
             if self.wait > 0:
                 self.wait = self.wait - 0.1
             elif self.angle_fix > 0:
-                self.angle_fix = self.angle_fix - 0.5
-            else: 
-                self.angle_fix = self.angle_fix + 0.5
+                self.angle_fix = self.angle_fix - 0.75
+                if (self.angle_fix < 0): self.angle_fix = 0
+            else:
+                self.angle_fix = self.angle_fix + 0.75
+                if (self.angle_fix > 0): self.angle_fix = 0
         # cv2.imshow('drawing',drawing)
-            
+    
+    # v = 35, w = 4.5, a_f = 36, delta = +-0.6
+    # v = 40, w = 2.7, a_f = 28, delta = +-0.5
+    # v = 50, w = 1.5, a_f = 28, delta = +-0.75
     def cal_sign(self, crop_img):
         x,y = crop_img.shape
-        left = crop_img[(int)(0):y, 0:x/2]
-        right = crop_img[(int)(0):y, x/2+1:x]
+        left = crop_img[int(0):y, 0:x/2]
+        right = crop_img[int(0):y, x/2+1:x]
         count_left = cv2.countNonZero(left)
         count_right = cv2.countNonZero(right)
         balance = count_left-count_right
         print ('balance:', balance)
-        if self.wait <= 0 and self.angle_fix == 0:
+        if self.wait <= 0 and int(self.angle_fix) == 0:
             if balance > 20:
-                self.angle_fix = 27
-                self.wait = 2.5
+                self.angle_fix = 28
             else:
-                self.angle_fix = -27
-                self.wait = 2.5
+                self.angle_fix = -28
+            self.wait = 2.7
 
 
     def inv_bird_view(self, img, stretch_ratio, dsize=(320, 240)):
@@ -263,6 +286,21 @@ class Lane_Detect:
         out = cv2.inRange(shadowHSV, minLaneInShadow, maxLaneInShadow)
         return out
 
+    def calc_shadow(self, img, sobel_kernel=5, thresh=(40, 255), canny_thresh=(50,150)):
+        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, sobel_kernel)
+        sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, sobel_kernel)
+        mag_sobel = np.sqrt(np.square(sobelx) + np.square(sobely))
+        scaled_sobel = np.uint8(255*mag_sobel/np.max(mag_sobel))
+        retval, threshold = cv2.threshold(scaled_sobel, thresh[0], thresh[1], cv2.THRESH_BINARY)
+
+        gausImage = cv2.GaussianBlur(gray, (sobel_kernel, sobel_kernel), 0)
+        # Run the canny edge detection
+        cannyImage = cv2.Canny(gausImage, canny_thresh[0], canny_thresh[1])
+        out = np.bitwise_and(threshold, cannyImage)
+        return out
+
+
     def pipeline(self,img):
 
         hls = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
@@ -272,15 +310,17 @@ class Lane_Detect:
         sobel = cv2.Sobel(l_channel, cv2.CV_64F, 1, 1)
         abs_sobel = np.abs(sobel)  # absolute all negative gradient values
 
-        l_ret, l_thresh = cv2.threshold(abs_sobel, 75, 255, cv2.THRESH_BINARY)
+        l_ret, l_thresh = cv2.threshold(abs_sobel, 50, 255, cv2.THRESH_BINARY)
 
         m1= self.binary_HSV(img)
         m2 = self.shadow_HSV(img)
         m3 = cv2.bitwise_or(m1.astype(np.uint8),m2.astype(np.uint8))
         m4 = cv2.bitwise_or(l_thresh.astype(np.uint8),m3.astype(np.uint8))
+        m5 = self.calc_shadow(img)
+        m6 = cv2.bitwise_and(m4, m5)
 
         ratio = 0.3  # shrink the bottom by 30%
-        bird_view = self.get_bird_view(m4, ratio)
+        bird_view = self.get_bird_view(m6, ratio)
 
         s_window, (left_fitx, right_fitx), (left_fit_,right_fit_), ploty = self.sliding_window(bird_view)
 
@@ -301,7 +341,7 @@ class Lane_Detect:
         bot_delta = 240 - d_xs[len(d_xs) - 1]
         # steer_delta = - (top_delta - bot_delta) / 4
         roi_idx = int(320*2/3)
-        delta = 240 - d_xs[roi_idx]
+        delta = 240 - d_xs[roi_idx] - 10
 
         # steer_delta = math.atan(delta/(320-roi_idx))
 
