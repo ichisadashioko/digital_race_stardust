@@ -1,0 +1,3 @@
+<launch>
+<node pkg="team614" name="team614_lane_detect" type="lane_and_sign_detect_.py" output="screen"></node>
+</launch>
