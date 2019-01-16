@@ -44,7 +44,7 @@ class Traffic_Sign:
         height, width = image.shape[:2]
         SKYLINE = int(height * 0.45)
         roi = image[0:SKYLINE, 0:width]
-        roi = self.region_of_interest(image)
+        # roi = self.region_of_interest(image)
 
         # contours of the roi
         conts = self.find_contour(roi)
